@@ -1,73 +1,50 @@
 import streamlit as st
 import yt_dlp
 import os
-import zipfile
-import shutil
 
-st.set_page_config(page_title="YouTube Batch Clipper", page_icon="✂️")
-st.title("✂️ YouTube Automatic Batch Clipper")
+st.set_page_config(page_title="YouTube Clipper Simple", page_icon="✂️")
+st.title("✂️ YouTube Clipper - Descărcare Directă")
 
-# Curățăm folderele vechi la pornire
-if os.path.exists("temp_clips"):
-    shutil.rmtree("temp_clips")
-os.makedirs("temp_clips")
+# Folder pentru salvări temporare
+if not os.path.exists("downloads"):
+    os.makedirs("downloads")
 
-def download_batch_clips(url, interval_sec, total_clips):
-    zip_path = "clips_arhiva.zip"
+def download_single_clip(url, start_time, end_time, index):
+    output_name = f"downloads/clip_{index}.mp4"
     
-    with yt_dlp.YoutubeDL({'format': 'bestvideo+bestaudio/best', 'quiet': True}) as ydl:
-        info = ydl.extract_info(url, download=False)
-        duration = info.get('duration', 0)
-
-    for i in range(total_clips):
-        start_time = i * interval_sec
-        end_time = start_time + interval_sec
-        
-        if start_time >= duration:
-            break
-            
-        output_name = f"temp_clips/clip_{i+1}_{start_time}_{end_time}.mp4"
-        
-        ydl_opts = {
-            'format': 'bestvideo+bestaudio/best',
-            'outtmpl': output_name,
-            'download_sections': [{
-                'start_time': start_time,
-                'end_time': end_time,
-            }],
-            'force_keyframes_at_cuts': True,
-        }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-            st.write(f"✅ Procesat clipul {i+1} ({start_time}s - {end_time}s)")
-
-    # Creăm arhiva ZIP
-    with zipfile.ZipFile(zip_path, 'w') as zipf:
-        for root, dirs, files in os.walk("temp_clips"):
-            for file in files:
-                zipf.write(os.path.join(root, file), file)
+    ydl_opts = {
+        'format': 'best',
+        'outtmpl': output_name,
+        'quiet': True,
+        'nocheckcertificate': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'download_sections': [{
+            'start_time': start_time,
+            'end_time': end_time,
+        }],
+        'force_keyframes_at_cuts': True,
+    }
     
-    return zip_path
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    return output_name
 
-# --- INTERFAȚA ---
+# --- INTERFAȚĂ ---
 url = st.text_input("Link YouTube")
-col1, col2 = st.columns(2)
+seg = st.number_input("Lungime segment (secunde)", 5, 600, 15)
+num = st.number_input("Câte segmente vrei?", 1, 10, 1)
 
-with col1:
-    segment_sec = st.number_input("Lungime clip (secunde)", min_value=5, max_value=600, value=15)
-with col2:
-    num_clips = st.number_input("Câte clipuri să tai?", min_value=1, max_value=20, value=5)
-
-if st.button("Începe Tăierea Batch (ZIP)"):
+if st.button("Taie Clipurile"):
     if url:
-        with st.spinner("Se descarcă și se taie..."):
+        for i in range(num):
+            start = i * seg
+            end = start + seg
             try:
-                zip_file = download_batch_clips(url, segment_sec, num_clips)
-                with open(zip_file, "rb") as f:
-                    st.download_button("📥 Descarcă Toate Clipurile (ZIP)", f, file_name="clipuri_youtube.zip")
-                st.success(f"Gata! Am tăiat {num_clips} clipuri.")
+                with st.spinner(f"Se procesează segmentul {i+1}..."):
+                    file_path = download_single_clip(url, start, end, i+1)
+                    with open(file_path, "rb") as f:
+                        st.download_button(f"📥 Descarcă Clip {i+1} ({start}s-{end}s)", f, file_name=f"clip_{i+1}.mp4")
             except Exception as e:
-                st.error(f"Eroare: {e}")
+                st.error(f"Eroare la clipul {i+1}: {e}")
     else:
-        st.warning("Te rog introdu un link!")
+        st.warning("Introdu un link mai întâi!")
