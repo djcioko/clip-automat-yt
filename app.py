@@ -1,58 +1,49 @@
 import streamlit as st
-import json
+import yt_dlp
 import os
+import json
 
-# Titlul aplicației
-st.set_page_config(page_title="YouTube Auto Clipper", page_icon="✂️")
+st.set_page_config(page_title="YouTube Clipper Pro", page_icon="✂️")
 st.title("✂️ YouTube Automatic Clipper")
 
-DB_FILE = "database.json"
+# Folder pentru rezultate
+if not os.path.exists("downloads"):
+    os.makedirs("downloads")
 
-# Funcție pentru a încărca datele salvate
-def load_data():
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "r") as f:
-            return json.load(f)
-    return []
-
-# Funcție pentru a salva datele
-def save_data(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-# Inițializăm datele în "session_state" (memoria curentă a paginii)
-if "clips" not in st.session_state:
-    st.session_state.clips = load_data()
+# Funcție pentru tăiere
+def download_and_cut(url, start, end, output_name):
+    outtmpl = f"downloads/{output_name}.%(ext)s"
+    
+    # Comanda specială pentru tăiere fără a descărca tot clipul
+    ydl_opts = {
+        'format': 'bestvideo+bestaudio/best',
+        'outtmpl': outtmpl,
+        'download_sections': [{
+            'start_time': sum(x * int(t) for x, t in zip([3600, 60, 1], start.split(':'))),
+            'end_time': sum(x * int(t) for x, t in zip([3600, 60, 1], end.split(':'))),
+        }],
+        'force_keyframes_at_cuts': True,
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([url])
+    return f"{output_name}.mp4"
 
 # --- INTERFAȚA ---
-with st.sidebar:
-    st.header("Adaugă Clip Nou")
-    url = st.text_input("Link YouTube")
-    t_start = st.text_input("Start (ex: 00:01:10)")
-    t_end = st.text_input("Final (ex: 00:01:40)")
-    
-    if st.button("Salvează în listă"):
-        if url and t_start and t_end:
-            new_clip = {"url": url, "start": t_start, "end": t_end, "status": "Pending"}
-            st.session_state.clips.append(new_clip)
-            save_data(st.session_state.clips)
-            st.success("Salvat!")
-        else:
-            st.error("Completează toate câmpurile!")
+url = st.text_input("Link YouTube")
+col1, col2 = st.columns(2)
+with col1:
+    t_start = st.text_input("Start (hh:mm:ss)", "00:00:10")
+with col2:
+    t_end = st.text_input("Final (hh:mm:ss)", "00:00:20")
 
-# --- AFIȘARE CLIPURI SALVATE ---
-st.subheader("📋 Clipuri de procesat")
-if st.session_state.clips:
-    for i, clip in enumerate(st.session_state.clips):
-        with st.expander(f"Clip #{i+1} - {clip['url'][:30]}..."):
-            st.write(f"**URL:** {clip['url']}")
-            st.write(f"**Interval:** {clip['start']} -> {clip['end']}")
-            if st.button(f"Procesează Clip #{i+1}", key=f"btn_{i}"):
-                st.info("Aici vom integra logica de tăiere cu yt-dlp...")
-else:
-    st.info("Nu ai niciun clip salvat încă.")
-
-if st.button("Șterge tot istoricul"):
-    st.session_state.clips = []
-    save_data([])
-    st.rerun()
+if st.button("Taie și Descarcă"):
+    with st.spinner("Se procesează... durează câteva secunde."):
+        try:
+            file_path = download_and_cut(url, t_start, t_end, "clip_rezultat")
+            st.success("Gata!")
+            # Aici va apărea butonul de download după procesare
+            with open(f"downloads/clip_rezultat.mp4", "rb") as file:
+                st.download_button("Descarcă Clipul pe PC", file, file_name="clip_taiat.mp4")
+        except Exception as e:
+            st.error(f"Eroare: {e}")
