@@ -1,45 +1,78 @@
 import streamlit as st
 import yt_dlp
 import os
+import json
 
-st.set_page_config(page_title="Clipper Direct", page_icon="✂️")
-st.title("✂️ Metoda Alternativă (Anti-Blocaj)")
+# Configurare pagină
+st.set_page_config(page_title="YT Clipper Pro", page_icon="✂️")
+st.title("✂️ YouTube Automatic Clipper")
 
-if not os.path.exists("downloads"):
-    os.makedirs("downloads")
+DB_FILE = "database.json"
 
-def download_with_fallback(url, start, end, index):
-    output_name = f"downloads/clip_{index}.mp4"
+# Funcție pentru memorarea fișierelor selectate
+def load_data():
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_data(data):
+    with open(DB_FILE, "w") as f:
+        json.dump(data, f)
+
+# Inițializare listă
+if 'clips' not in st.session_state:
+    st.session_state.clips = load_data()
+
+# --- MOTORUL DE DESCĂRCARE (V3 - Safe Mode) ---
+def download_clip(url, start, end):
+    if not os.path.exists("downloads"):
+        os.makedirs("downloads")
     
-    # Folosim cele mai "blânde" setări posibile
+    output = f"downloads/clip_{start}_{end}.mp4"
+    
     ydl_opts = {
-        'format': 'mp4/best', # Forțăm MP4 direct pentru a evita procesarea grea
-        'outtmpl': output_name,
+        'format': 'mp4/best', # Cel mai compatibil format
         'quiet': True,
+        'nocheckcertificate': True,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'download_sections': [{'start_time': start, 'end_time': end}],
         'force_keyframes_at_cuts': True,
-        # Adăugăm un user agent de mobil (uneori YouTube e mai blând cu ele)
-        'user_agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
-    return output_name
+    return output
 
-url = st.text_input("Link YouTube")
-seg = st.number_input("Secunde per clip", 5, 600, 15)
-num = st.number_input("Câte segmente?", 1, 5, 1)
+# --- INTERFAȚA ---
+with st.sidebar:
+    st.header("Adaugă Clip Nou")
+    new_url = st.text_input("Link YouTube")
+    seg_time = st.number_input("Secunde per segment", 5, 60, 15)
+    
+    if st.button("Salvează în listă"):
+        if new_url:
+            st.session_state.clips.append({"url": new_url, "seg": seg_time})
+            save_data(st.session_state.clips)
+            st.success("Salvat!")
 
-if st.button("Încearcă din nou"):
-    if url:
-        for i in range(num):
-            start = i * seg
-            end = start + seg
+# Afișare Istoric (Memorie)
+st.subheader("📋 Clipurile tale salvate")
+for idx, item in enumerate(st.session_state.clips):
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.write(f"**{idx+1}.** {item['url']} ({item['seg']}s)")
+    with col2:
+        if st.button(f"Taie {idx+1}"):
             try:
-                with st.spinner(f"Încercăm segmentul {i+1}..."):
-                    file_path = download_with_fallback(url, start, end, i+1)
-                    with open(file_path, "rb") as f:
-                        st.download_button(f"📥 Descarcă Clip {i+1}", f, file_name=f"clip_{i+1}.mp4")
+                with st.spinner("Se taie..."):
+                    path = download_clip(item['url'], 0, item['seg'])
+                    with open(path, "rb") as f:
+                        st.download_button("📥 Descarcă", f, file_name=f"clip_{idx}.mp4")
             except Exception as e:
-                st.error(f"YouTube încă blochează serverul. Eroare: {e}")
-                st.warning("⚠️ Dacă nici asta nu merge, înseamnă că Streamlit este blocat total pe IP. Soluția ar fi să rulezi codul local sau pe Replit.")
+                st.error("YouTube blochează serverul (403).")
+
+if st.button("Șterge tot istoricul"):
+    st.session_state.clips = []
+    save_data([])
+    st.rerun()
